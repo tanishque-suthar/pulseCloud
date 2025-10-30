@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import Login from './Login';
 
 // --- Configuration ---
 const UPLOAD_API_URL = 'https://sqs8nswnp6.execute-api.us-east-1.amazonaws.com/default/s3-via-lambda';
@@ -186,6 +187,7 @@ function EditReportModal({ report, onClose, onSave, setStatus }) {
 
 // --- Main App Component ---
 export default function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [reports, setReports] = useState([]);
   const [file, setFile] = useState(null);
   const [status, setStatus] = useState({ message: '', type: '' });
@@ -433,6 +435,32 @@ export default function App() {
   const topMedicalTerms = getMedicalTermStats();
   const maxCount = topMedicalTerms.length > 0 ? topMedicalTerms[0].count : 1;
 
+  // Check authentication on mount
+  useEffect(() => {
+    const authStatus = sessionStorage.getItem('isAuthenticated');
+    if (authStatus === 'true') {
+      setIsAuthenticated(true);
+    }
+  }, []);
+
+  const handleLoginSuccess = () => {
+    setIsAuthenticated(true);
+  };
+
+  const handleLogout = () => {
+    sessionStorage.removeItem('isAuthenticated');
+    sessionStorage.removeItem('username');
+    setIsAuthenticated(false);
+    setReports([]);
+    setActiveTab('upload');
+    setStatus({ message: '', type: '' });
+  };
+
+  // If not authenticated, show login page
+  if (!isAuthenticated) {
+    return <Login onLoginSuccess={handleLoginSuccess} />;
+  }
+
   // --- UI Rendering ---
   return (
     <div className="bg-gray-50 min-h-screen font-sans">
@@ -456,7 +484,21 @@ export default function App() {
 
       <div className="container mx-auto p-4 sm:p-6 lg:p-8">
         <header className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-gray-800">PulseCloud Dashboard</h1>
+          <div className="flex justify-between items-center">
+            <div className="flex-1"></div>
+            <h1 className="text-4xl font-bold text-gray-800 flex-1">PulseCloud Dashboard</h1>
+            <div className="flex-1 flex justify-end items-center gap-4">
+              <span className="text-sm text-gray-600">
+                {sessionStorage.getItem('username')}
+              </span>
+              <button
+                onClick={handleLogout}
+                className="text-sm bg-gray-200 px-4 py-2 rounded-md hover:bg-gray-300 transition"
+              >
+                Logout
+              </button>
+            </div>
+          </div>
         </header>
 
         {/* Tab Navigation */}
