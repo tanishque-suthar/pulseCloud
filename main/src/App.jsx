@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Login from './Login';
+import Chatbot from './Chatbot';
 
 // --- Configuration ---
 const UPLOAD_API_URL = 'https://sqs8nswnp6.execute-api.us-east-1.amazonaws.com/default/s3-via-lambda';
@@ -54,6 +55,191 @@ function DeleteConfirmModal({ report, onClose, onConfirm, isDeleting }) {
           >
             {isDeleting ? 'Deleting...' : 'Delete Report'}
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --- Delete Patient Confirmation Modal Component ---
+function DeletePatientModal({ patient, onClose, onConfirm, isDeleting }) {
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md transform transition-all animate-fadeIn">
+        <div className="p-8">
+          <div className="flex items-center justify-center w-16 h-16 mx-auto bg-gradient-to-br from-red-100 to-red-50 rounded-full mb-6 shadow-lg">
+            <svg className="w-8 h-8 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+          </div>
+          <h3 className="text-2xl font-bold text-gray-900 text-center mb-3">Delete Patient</h3>
+          <p className="text-sm text-gray-600 text-center mb-6">
+            Are you sure you want to delete this patient and <span className="font-bold text-red-600">all {patient.reportCount} associated report{patient.reportCount !== 1 ? 's' : ''}</span>? This action cannot be undone.
+          </p>
+          <div className="bg-gradient-to-br from-gray-50 to-gray-100 p-4 rounded-xl mb-6 text-sm border border-gray-200">
+            <div className="flex justify-between mb-2">
+              <span className="font-semibold text-gray-700">Patient ID:</span>
+              <span className="text-gray-900 font-medium">{patient.patient_id}</span>
+            </div>
+            <div className="flex justify-between mb-2">
+              <span className="font-semibold text-gray-700">Patient Name:</span>
+              <span className="text-gray-900 font-medium">{patient.phi?.name || '--'}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="font-semibold text-gray-700">Total Reports:</span>
+              <span className="text-red-600 font-bold">{patient.reportCount}</span>
+            </div>
+          </div>
+        </div>
+        <div className="bg-gray-50 px-8 py-5 flex justify-end space-x-3 rounded-b-2xl border-t border-gray-200">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isDeleting}
+            className="py-2.5 px-6 text-sm font-semibold text-gray-700 bg-white rounded-lg border-2 border-gray-300 hover:bg-gray-50 hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 transition-all"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={isDeleting}
+            className="py-2.5 px-6 text-sm font-semibold text-white bg-gradient-to-r from-red-600 to-red-700 rounded-lg hover:from-red-700 hover:to-red-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:from-gray-400 disabled:to-gray-400 shadow-lg hover:shadow-xl transition-all"
+          >
+            {isDeleting ? 'Deleting...' : `Delete Patient & ${patient.reportCount} Report${patient.reportCount !== 1 ? 's' : ''}`}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --- Upload Modal Component ---
+function UploadModal({ onClose, onUploadSuccess, prefilledPatientId = null }) {
+  const [file, setFile] = useState(null);
+  const [status, setStatus] = useState({ message: '', type: '' });
+  const [isUploading, setIsUploading] = useState(false);
+
+  const handleUpload = async (e) => {
+    e.preventDefault();
+    if (!file) {
+      setStatus({ message: 'Please select a file.', type: 'error' });
+      return;
+    }
+    if (file.size > 6 * 1024 * 1024) {
+      setStatus({ message: 'Error: File is too large (Max 6MB).', type: 'error' });
+      return;
+    }
+
+    const patientId = prefilledPatientId || Date.now();
+    setIsUploading(true);
+    setStatus({ message: 'Uploading...', type: 'info' });
+
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = async () => {
+      try {
+        const base64Data = reader.result.split(',')[1];
+        const response = await fetch(UPLOAD_API_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fileName: file.name,
+            patientId: patientId,
+            fileData: base64Data,
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || `Upload failed with status: ${response.status}`);
+        }
+
+        setStatus({ message: 'Upload successful!', type: 'success' });
+        setTimeout(() => {
+          onUploadSuccess();
+          onClose();
+        }, 1000);
+      } catch (error) {
+        console.error('Upload Error:', error);
+        setStatus({ message: `Upload failed: ${error.message}`, type: 'error' });
+        setIsUploading(false);
+      }
+    };
+    reader.onerror = () => {
+      setStatus({ message: 'Error reading file.', type: 'error' });
+      setIsUploading(false);
+    };
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md transform transition-all animate-fadeIn">
+        <div className="p-8">
+          <div className="flex items-center justify-between pb-4 border-b border-gray-200 mb-6">
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900">
+                {prefilledPatientId ? 'Add Report to Patient' : 'Upload New Report'}
+              </h2>
+              {prefilledPatientId && (
+                <p className="text-sm text-gray-500 mt-1">
+                  Patient ID: <span className="font-semibold text-indigo-600">{prefilledPatientId}</span>
+                </p>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="text-gray-400 hover:text-gray-600 transition-colors"
+            >
+              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
+          <form onSubmit={handleUpload} className="space-y-6">
+            <div>
+              <label htmlFor="fileInputModal" className="block text-sm font-semibold text-gray-700 mb-2">Select File</label>
+              <input
+                type="file"
+                id="fileInputModal"
+                onChange={(e) => setFile(e.target.files[0])}
+                required
+                className="block w-full text-sm text-gray-600 file:mr-4 file:py-3 file:px-6 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-gradient-to-r file:from-indigo-50 file:to-purple-50 file:text-indigo-700 hover:file:from-indigo-100 hover:file:to-purple-100 cursor-pointer border-2 border-dashed border-gray-300 rounded-xl p-4 hover:border-indigo-400 transition-all"
+              />
+              <p className="mt-2 text-xs text-gray-500">Maximum file size: 6MB</p>
+            </div>
+
+            {status.message && (
+              <div className={`p-4 rounded-xl text-sm font-medium border-2 ${status.type === 'success'
+                ? 'bg-green-50 text-green-800 border-green-200'
+                : status.type === 'error'
+                  ? 'bg-red-50 text-red-800 border-red-200'
+                  : 'bg-blue-50 text-blue-800 border-blue-200'
+                }`}>
+                {status.message}
+              </div>
+            )}
+
+            <div className="flex justify-end space-x-3 pt-4">
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={isUploading}
+                className="py-2.5 px-6 text-sm font-semibold text-gray-700 bg-white rounded-lg border-2 border-gray-300 hover:bg-gray-50 hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isUploading}
+                className="py-2.5 px-6 text-sm font-semibold text-white bg-gradient-to-r from-indigo-600 to-indigo-700 rounded-lg hover:from-indigo-700 hover:to-indigo-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:from-gray-400 disabled:to-gray-400 shadow-lg hover:shadow-xl transition-all"
+              >
+                {isUploading ? 'Uploading...' : 'Upload Report'}
+              </button>
+            </div>
+          </form>
         </div>
       </div>
     </div>
@@ -260,14 +446,16 @@ function EditReportModal({ report, onClose, onSave, setStatus }) {
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [reports, setReports] = useState([]);
-  const [file, setFile] = useState(null);
   const [status, setStatus] = useState({ message: '', type: '' });
   const [isLoading, setIsLoading] = useState(true);
   const [editingReport, setEditingReport] = useState(null);
   const [deletingReport, setDeletingReport] = useState(null);
+  const [deletingPatient, setDeletingPatient] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [activeTab, setActiveTab] = useState('upload'); // Changed default to 'upload'
+  const [activeTab, setActiveTab] = useState('upload');
   const [expandedReportId, setExpandedReportId] = useState(null);
+  const [expandedPatientId, setExpandedPatientId] = useState(null);
+  const [uploadModalPatientId, setUploadModalPatientId] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortConfig, setSortConfig] = useState({ key: 'report_id', direction: 'desc' });
 
@@ -391,6 +579,60 @@ export default function App() {
     }
   };
 
+  const handleDeletePatient = (patient) => {
+    setDeletingPatient(patient);
+  };
+
+  const handleCancelDeletePatient = () => {
+    setDeletingPatient(null);
+  };
+
+  const handleConfirmDeletePatient = async () => {
+    if (!deletingPatient) return;
+
+    setIsDeleting(true);
+    setStatus({ message: `Deleting patient ${deletingPatient.patient_id} and all reports...`, type: 'info' });
+
+    try {
+      if (!DELETE_REPORT_API_URL.startsWith('https')) {
+        throw new Error("Delete Report API URL is not configured.");
+      }
+
+      // Delete all reports for this patient
+      const deletePromises = deletingPatient.reports.map(report => {
+        const payload = {
+          patient_id: report.patient_id,
+          report_id: report.report_id,
+          s3Key: report.s3Url.split('.com/')[1]
+        };
+
+        return fetch(DELETE_REPORT_API_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+      });
+
+      const results = await Promise.allSettled(deletePromises);
+
+      // Check if all deletions succeeded
+      const failedDeletions = results.filter(result => result.status === 'rejected' || !result.value.ok);
+
+      if (failedDeletions.length > 0) {
+        throw new Error(`Failed to delete ${failedDeletions.length} out of ${deletingPatient.reportCount} reports`);
+      }
+
+      setStatus({ message: `Patient and all ${deletingPatient.reportCount} reports deleted successfully. Refreshing...`, type: 'success' });
+      setDeletingPatient(null);
+      setTimeout(fetchReports, 1000);
+    } catch (error) {
+      console.error('Delete Patient Error:', error);
+      setStatus({ message: `Failed to delete patient: ${error.message}`, type: 'error' });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   // --- 3. ADD HANDLERS FOR THE MODAL ---
   const handleOpenEditModal = (report) => {
     // Only allow editing if it's a processed PDF
@@ -413,6 +655,43 @@ export default function App() {
   // Toggle expanded row
   const toggleExpandRow = (reportId) => {
     setExpandedReportId(expandedReportId === reportId ? null : reportId);
+  };
+
+  const toggleExpandPatient = (patientId) => {
+    setExpandedPatientId(expandedPatientId === patientId ? null : patientId);
+  };
+
+  const handleOpenUploadModal = (patientId = null) => {
+    setUploadModalPatientId(patientId);
+  };
+
+  const handleCloseUploadModal = () => {
+    setUploadModalPatientId(null);
+  };
+
+  const handleUploadSuccess = () => {
+    setStatus({ message: 'Upload successful! Refreshing list...', type: 'success' });
+    setTimeout(fetchReports, 1000);
+  };
+
+  // Group reports by patient_id
+  const getGroupedReports = () => {
+    const grouped = {};
+
+    reports.forEach(report => {
+      const patientId = report.patient_id;
+      if (!grouped[patientId]) {
+        grouped[patientId] = [];
+      }
+      grouped[patientId].push(report);
+    });
+
+    // Sort reports within each patient group by report_id descending
+    Object.keys(grouped).forEach(patientId => {
+      grouped[patientId].sort((a, b) => b.report_id - a.report_id);
+    });
+
+    return grouped;
   };
 
   // Filter and sort reports
@@ -471,14 +750,83 @@ export default function App() {
     return filteredReports;
   };
 
-  const handleSort = (key) => {
-    setSortConfig(prevConfig => ({
-      key,
-      direction: prevConfig.key === key && prevConfig.direction === 'asc' ? 'desc' : 'asc'
-    }));
+  const getFilteredAndSortedPatients = () => {
+    const groupedReports = getGroupedReports();
+    let patients = Object.entries(groupedReports).map(([patientId, patientReports]) => {
+      const latestReport = patientReports[0]; // Already sorted by report_id desc
+      // Get the first uploaded report (oldest report_id) for PHI data
+      const firstReport = patientReports.reduce((oldest, current) =>
+        current.report_id < oldest.report_id ? current : oldest
+        , patientReports[0]);
+
+      return {
+        patient_id: parseInt(patientId),
+        reports: patientReports,
+        reportCount: patientReports.length,
+        latestReport: latestReport,
+        firstReport: firstReport, // Add first report reference
+        phi: firstReport.extracted_data?.phi, // Use first report's PHI
+        uploadTimestamp: latestReport.uploadTimestamp
+      };
+    });
+
+    // Apply search filter
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      patients = patients.filter(patient => {
+        const phi = patient.phi;
+        const allTerms = patient.reports
+          .flatMap(r => r.extracted_data?.medical_terms || [])
+          .join(' ')
+          .toLowerCase();
+
+        return (
+          patient.patient_id.toString().includes(query) ||
+          phi?.name?.toLowerCase().includes(query) ||
+          phi?.age?.toString().includes(query) ||
+          phi?.gender?.toLowerCase().includes(query) ||
+          patient.reports.some(r => r.fileName?.toLowerCase().includes(query)) ||
+          allTerms.includes(query)
+        );
+      });
+    }
+
+    // Apply sorting
+    patients.sort((a, b) => {
+      let aValue, bValue;
+
+      switch (sortConfig.key) {
+        case 'patient_id':
+          aValue = a.patient_id;
+          bValue = b.patient_id;
+          break;
+        case 'name':
+          aValue = a.phi?.name || '';
+          bValue = b.phi?.name || '';
+          break;
+        case 'age':
+          aValue = parseInt(a.phi?.age) || 0;
+          bValue = parseInt(b.phi?.age) || 0;
+          break;
+        case 'date':
+          aValue = new Date(a.uploadTimestamp).getTime();
+          bValue = new Date(b.uploadTimestamp).getTime();
+          break;
+        default:
+          aValue = a.patient_id;
+          bValue = b.patient_id;
+      }
+
+      if (aValue < bValue) return sortConfig.direction === 'asc' ? -1 : 1;
+      if (aValue > bValue) return sortConfig.direction === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+    return patients;
   };
 
   const filteredReports = getFilteredAndSortedReports();
+  const filteredPatients = getFilteredAndSortedPatients();
 
   // Calculate medical term statistics
   const getMedicalTermStats = () => {
@@ -592,6 +940,23 @@ export default function App() {
         />
       )}
 
+      {deletingPatient && (
+        <DeletePatientModal
+          patient={deletingPatient}
+          onClose={handleCancelDeletePatient}
+          onConfirm={handleConfirmDeletePatient}
+          isDeleting={isDeleting}
+        />
+      )}
+
+      {uploadModalPatientId !== null && (
+        <UploadModal
+          onClose={handleCloseUploadModal}
+          onUploadSuccess={handleUploadSuccess}
+          prefilledPatientId={uploadModalPatientId}
+        />
+      )}
+
       <div className="container mx-auto p-4 sm:p-6 lg:p-8">
         <header className="mb-8">
           <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
@@ -601,7 +966,7 @@ export default function App() {
                 <div className="flex items-center gap-3 mb-2">
                   <div className="w-12 h-12 bg-gradient-to-br from-indigo-600 to-purple-600 rounded-xl flex items-center justify-center shadow-lg">
                     <svg className="w-7 h-7 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                     </svg>
                   </div>
                   <h1 className="text-4xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
@@ -655,9 +1020,23 @@ export default function App() {
               >
                 <div className="flex items-center justify-center gap-2">
                   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                   </svg>
                   Patient Reports
+                </div>
+              </button>
+              <button
+                onClick={() => setActiveTab('chatbot')}
+                className={`flex-1 py-3.5 px-6 text-sm font-semibold rounded-xl transition-all ${activeTab === 'chatbot'
+                  ? 'bg-gradient-to-r from-indigo-600 to-indigo-700 text-white shadow-lg'
+                  : 'text-gray-600 hover:bg-gray-50'
+                  }`}
+              >
+                <div className="flex items-center justify-center gap-2">
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                  </svg>
+                  AI Assistant
                 </div>
               </button>
               <button
@@ -824,12 +1203,13 @@ export default function App() {
                           )}
                         </div>
                       </th>
+                      <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">Reports</th>
                       <th
                         className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-200 transition-colors"
                         onClick={() => handleSort('date')}
                       >
                         <div className="flex items-center gap-2">
-                          Date
+                          Latest Upload
                           {sortConfig.key === 'date' && (
                             <span className="text-indigo-600">{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
                           )}
@@ -840,7 +1220,7 @@ export default function App() {
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     {isLoading ? (
-                      <tr><td colSpan="6" className="text-center py-12 text-gray-500">
+                      <tr><td colSpan="7" className="text-center py-12 text-gray-500">
                         <div className="flex flex-col items-center gap-3">
                           <svg className="animate-spin h-8 w-8 text-indigo-600" fill="none" viewBox="0 0 24 24">
                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -849,15 +1229,18 @@ export default function App() {
                           Loading reports...
                         </div>
                       </td></tr>
-                    ) : filteredReports.length > 0 ? (
-                      filteredReports.map(report => {
-                        const phi = report.extracted_data?.phi;
-                        const terms = report.extracted_data?.medical_terms?.join(', ');
-                        const isExpanded = expandedReportId === report.report_id;
+                    ) : filteredPatients.length > 0 ? (
+                      filteredPatients.map(patient => {
+                        const isExpanded = expandedPatientId === patient.patient_id;
+                        // Get the first uploaded report (oldest report_id)
+                        const firstReport = patient.reports.reduce((oldest, current) =>
+                          current.report_id < oldest.report_id ? current : oldest
+                          , patient.reports[0]);
+                        const firstReportPhi = firstReport.extracted_data?.phi;
 
                         return (
-                          <React.Fragment key={report.report_id}>
-                            <tr className="hover:bg-gradient-to-r hover:from-indigo-50 hover:to-purple-50 cursor-pointer transition-all" onClick={() => toggleExpandRow(report.report_id)}>
+                          <React.Fragment key={patient.patient_id}>
+                            <tr className="hover:bg-gradient-to-r hover:from-indigo-50 hover:to-purple-50 cursor-pointer transition-all" onClick={() => toggleExpandPatient(patient.patient_id)}>
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                 <svg
                                   className={`w-5 h-5 transition-transform text-indigo-600 ${isExpanded ? 'rotate-90' : ''}`}
@@ -872,87 +1255,208 @@ export default function App() {
                                 </svg>
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap">
-                                <div className="text-sm font-bold text-gray-900">{report.patient_id}</div>
+                                <div className="text-sm font-bold text-gray-900">{patient.patient_id}</div>
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap">
-                                <div className="text-sm font-medium text-gray-900">{phi?.name || '--'}</div>
+                                <div className="text-sm font-medium text-gray-900">{patient.phi?.name || '--'}</div>
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap">
-                                <div className="text-sm text-gray-700">{phi?.age || '--'}</div>
+                                <div className="text-sm text-gray-700">{patient.phi?.age || '--'}</div>
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap">
-                                <div className="text-sm text-gray-700">{new Date(report.uploadTimestamp).toLocaleDateString()}</div>
+                                <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-gradient-to-r from-indigo-100 to-purple-100 text-indigo-800 border border-indigo-200">
+                                  {patient.reportCount} {patient.reportCount === 1 ? 'report' : 'reports'}
+                                </span>
                               </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-semibold space-x-4" onClick={(e) => e.stopPropagation()}>
-                                <button
-                                  onClick={() => handleOpenEditModal(report)}
-                                  className="text-indigo-600 hover:text-indigo-900 disabled:text-gray-300 transition-colors"
-                                  disabled={!report.extracted_data}
-                                  title={report.extracted_data ? "Edit extracted data" : "No extracted data to edit"}
-                                >
-                                  Edit
-                                </button>
-                                <button onClick={() => handleDelete(report)} className="text-red-600 hover:text-red-900 transition-colors">Delete</button>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="text-sm text-gray-700">{new Date(patient.uploadTimestamp).toLocaleDateString()}</div>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-semibold" onClick={(e) => e.stopPropagation()}>
+                                <div className="flex items-center justify-end gap-3">
+                                  <button
+                                    onClick={() => handleOpenUploadModal(patient.patient_id)}
+                                    className="text-indigo-600 hover:text-indigo-900 transition-colors flex items-center gap-1"
+                                  >
+                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                    </svg>
+                                    Add File
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeletePatient(patient)}
+                                    className="text-red-600 hover:text-red-900 transition-colors flex items-center gap-1"
+                                    title="Delete patient and all reports"
+                                  >
+                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                    </svg>
+                                    Delete Patient
+                                  </button>
+                                </div>
                               </td>
                             </tr>
                             {isExpanded && (
                               <tr>
-                                <td colSpan="6" className="px-6 py-6 bg-gradient-to-br from-gray-50 to-indigo-50 border-t border-indigo-100">
-                                  <div className="space-y-5">
-                                    <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
-                                      <h4 className="text-sm font-bold text-gray-700 mb-2 flex items-center">
-                                        <svg className="w-4 h-4 mr-2 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                <td colSpan="7" className="px-6 py-6 bg-gradient-to-br from-gray-50 to-indigo-50 border-t border-indigo-100">
+                                  <div className="space-y-4">
+                                    <div className="flex justify-between items-center mb-4">
+                                      <h4 className="text-lg font-bold text-gray-900 flex items-center">
+                                        <svg className="w-5 h-5 mr-2 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                                         </svg>
-                                        File Name:
+                                        All Reports for Patient {patient.patient_id}
                                       </h4>
-                                      <a
-                                        href={report.s3Url}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="text-indigo-600 hover:text-indigo-900 text-sm font-medium hover:underline"
-                                        onClick={(e) => e.stopPropagation()}
-                                      >
-                                        {report.fileName}
-                                      </a>
+                                      <div className="flex gap-3">
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleOpenUploadModal(patient.patient_id);
+                                          }}
+                                          className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-4 py-2 rounded-lg hover:from-indigo-700 hover:to-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 font-semibold shadow-lg hover:shadow-xl transition-all text-sm flex items-center gap-2"
+                                        >
+                                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                          </svg>
+                                          Add File
+                                        </button>
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleDeletePatient(patient);
+                                          }}
+                                          className="bg-gradient-to-r from-red-600 to-red-700 text-white px-4 py-2 rounded-lg hover:from-red-700 hover:to-red-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 font-semibold shadow-lg hover:shadow-xl transition-all text-sm flex items-center gap-2"
+                                        >
+                                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                          </svg>
+                                          Delete Patient
+                                        </button>
+                                      </div>
                                     </div>
-                                    <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
-                                      <h4 className="text-sm font-bold text-gray-700 mb-3 flex items-center">
-                                        <svg className="w-4 h-4 mr-2 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                                        </svg>
-                                        Medical Terms:
-                                      </h4>
-                                      {report.extracted_data?.medical_terms?.length > 0 ? (
-                                        <div className="flex flex-wrap gap-2">
-                                          {report.extracted_data.medical_terms.map((term, index) => (
-                                            <span
-                                              key={index}
-                                              className="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-semibold bg-gradient-to-r from-indigo-100 to-purple-100 text-indigo-800 border border-indigo-200 shadow-sm"
-                                            >
-                                              {term}
-                                            </span>
-                                          ))}
-                                        </div>
-                                      ) : (
-                                        <p className="text-sm text-gray-500 italic">No medical terms extracted</p>
-                                      )}
-                                    </div>
-                                    {phi && (
-                                      <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
-                                        <h4 className="text-sm font-bold text-gray-700 mb-3 flex items-center">
+
+                                    {/* Patient Information Box - Only Once */}
+                                    {firstReportPhi && (
+                                      <div className="bg-white p-5 rounded-xl shadow-md border-2 border-indigo-200 mb-6">
+                                        <h5 className="text-sm font-bold text-gray-900 mb-3 flex items-center">
                                           <svg className="w-4 h-4 mr-2 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                                           </svg>
-                                          Additional Patient Information:
-                                        </h4>
-                                        <div className="grid grid-cols-2 gap-3 text-sm">
-                                          {phi.gender && <div className="bg-gray-50 p-2 rounded-lg"><span className="font-semibold text-gray-700">Gender:</span> <span className="text-gray-900">{phi.gender}</span></div>}
-                                          {phi.dob && <div className="bg-gray-50 p-2 rounded-lg"><span className="font-semibold text-gray-700">DOB:</span> <span className="text-gray-900">{phi.dob}</span></div>}
-                                          {phi.patient_id && <div className="bg-gray-50 p-2 rounded-lg"><span className="font-semibold text-gray-700">UHID:</span> <span className="text-gray-900">{phi.patient_id}</span></div>}
+                                          Patient Information
+                                        </h5>
+                                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
+                                          {firstReportPhi.name && (
+                                            <div className="bg-gradient-to-br from-gray-50 to-indigo-50 p-3 rounded-lg">
+                                              <span className="font-semibold text-gray-700 block text-xs mb-1">Name:</span>
+                                              <span className="text-gray-900 font-medium">{firstReportPhi.name}</span>
+                                            </div>
+                                          )}
+                                          {firstReportPhi.age && (
+                                            <div className="bg-gradient-to-br from-gray-50 to-indigo-50 p-3 rounded-lg">
+                                              <span className="font-semibold text-gray-700 block text-xs mb-1">Age:</span>
+                                              <span className="text-gray-900 font-medium">{firstReportPhi.age}</span>
+                                            </div>
+                                          )}
+                                          {firstReportPhi.gender && (
+                                            <div className="bg-gradient-to-br from-gray-50 to-indigo-50 p-3 rounded-lg">
+                                              <span className="font-semibold text-gray-700 block text-xs mb-1">Gender:</span>
+                                              <span className="text-gray-900 font-medium">{firstReportPhi.gender}</span>
+                                            </div>
+                                          )}
+                                          {firstReportPhi.dob && (
+                                            <div className="bg-gradient-to-br from-gray-50 to-indigo-50 p-3 rounded-lg">
+                                              <span className="font-semibold text-gray-700 block text-xs mb-1">Date of Birth:</span>
+                                              <span className="text-gray-900 font-medium">{firstReportPhi.dob}</span>
+                                            </div>
+                                          )}
+                                          {firstReportPhi.patient_id && (
+                                            <div className="bg-gradient-to-br from-gray-50 to-indigo-50 p-3 rounded-lg sm:col-span-2">
+                                              <span className="font-semibold text-gray-700 block text-xs mb-1">UHID:</span>
+                                              <span className="text-gray-900 font-medium">{firstReportPhi.patient_id}</span>
+                                            </div>
+                                          )}
                                         </div>
                                       </div>
                                     )}
+
+                                    {/* Reports List */}
+                                    <div className="space-y-3">
+                                      <h5 className="text-sm font-bold text-gray-700 flex items-center">
+                                        <svg className="w-4 h-4 mr-2 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                                        </svg>
+                                        Medical Reports ({patient.reportCount})
+                                      </h5>
+                                      {patient.reports.map((report, index) => {
+                                        const terms = report.extracted_data?.medical_terms;
+
+                                        return (
+                                          <div key={report.report_id} className="bg-white p-4 rounded-xl shadow-md border border-gray-200 hover:shadow-lg transition-shadow">
+                                            <div className="flex justify-between items-start mb-3">
+                                              <div className="flex-1">
+                                                <div className="flex items-center gap-3 mb-2">
+                                                  <span className="inline-flex items-center px-3 py-1 rounded-lg text-xs font-bold bg-gradient-to-r from-gray-100 to-gray-200 text-gray-700">
+                                                    Report #{report.report_id}
+                                                  </span>
+                                                  <span className="text-xs text-gray-500">
+                                                    {new Date(report.uploadTimestamp).toLocaleString()}
+                                                  </span>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                  <svg className="w-4 h-4 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                                                  </svg>
+                                                  <a
+                                                    href={report.s3Url}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="text-indigo-600 hover:text-indigo-900 text-sm font-medium hover:underline"
+                                                  >
+                                                    {report.fileName}
+                                                  </a>
+                                                </div>
+                                              </div>
+                                              <div className="flex gap-3">
+                                                <button
+                                                  onClick={() => handleOpenEditModal(report)}
+                                                  className="text-indigo-600 hover:text-indigo-900 disabled:text-gray-300 transition-colors text-sm font-semibold"
+                                                  disabled={!report.extracted_data}
+                                                  title={report.extracted_data ? "Edit extracted data" : "No extracted data to edit"}
+                                                >
+                                                  Edit
+                                                </button>
+                                                <button
+                                                  onClick={() => handleDelete(report)}
+                                                  className="text-red-600 hover:text-red-900 transition-colors text-sm font-semibold"
+                                                >
+                                                  Delete
+                                                </button>
+                                              </div>
+                                            </div>
+
+                                            {terms && terms.length > 0 && (
+                                              <div className="bg-gradient-to-br from-purple-50 to-indigo-50 p-3 rounded-lg border border-purple-100">
+                                                <h6 className="text-xs font-bold text-gray-700 mb-2 flex items-center">
+                                                  <svg className="w-3 h-3 mr-1 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                                                  </svg>
+                                                  Medical Terms Extracted:
+                                                </h6>
+                                                <div className="flex flex-wrap gap-2">
+                                                  {terms.map((term, idx) => (
+                                                    <span
+                                                      key={idx}
+                                                      className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold bg-white text-indigo-800 border border-indigo-200 shadow-sm"
+                                                    >
+                                                      {term}
+                                                    </span>
+                                                  ))}
+                                                </div>
+                                              </div>
+                                            )}
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
                                   </div>
                                 </td>
                               </tr>
@@ -961,12 +1465,12 @@ export default function App() {
                         )
                       })
                     ) : (
-                      <tr><td colSpan="6" className="text-center py-12">
+                      <tr><td colSpan="7" className="text-center py-12">
                         <div className="flex flex-col items-center gap-3 text-gray-500">
                           <svg className="w-16 h-16 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                           </svg>
-                          <p className="font-medium">{searchQuery ? 'No reports match your search.' : 'No reports found.'}</p>
+                          <p className="font-medium">{searchQuery ? 'No patients match your search.' : 'No patients found.'}</p>
                         </div>
                       </td></tr>
                     )}
@@ -974,6 +1478,11 @@ export default function App() {
                 </table>
               </div>
             </div>
+          )}
+
+          {/* Chatbot Tab Content */}
+          {activeTab === 'chatbot' && (
+            <Chatbot patients={filteredPatients} />
           )}
 
           {/* Statistics Tab Content */}
@@ -1000,7 +1509,7 @@ export default function App() {
                     <div className="flex items-center justify-between mb-3">
                       <p className="text-sm text-indigo-700 font-bold uppercase tracking-wide">Total Reports</p>
                       <svg className="w-8 h-8 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                       </svg>
                     </div>
                     <p className="text-4xl font-bold text-indigo-900">{reports.length}</p>
@@ -1068,7 +1577,7 @@ export default function App() {
                   ) : (
                     <div className="text-center py-16 text-gray-500">
                       <svg className="mx-auto h-20 w-20 text-gray-300 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 012 2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                       </svg>
                       <p className="text-base font-medium italic">No medical terms data available yet.</p>
                       <p className="text-sm mt-2">Upload and process reports to see statistics.</p>
